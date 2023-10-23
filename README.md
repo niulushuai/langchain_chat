@@ -1,1 +1,3 @@
 # langchain_chat
+大语言模型需要自己新建文件夹THUDM，然后去网上下载
+embedding模型需要自己新建文件夹moka-ai，然后去网上下载
