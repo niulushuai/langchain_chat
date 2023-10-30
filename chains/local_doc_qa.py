@@ -17,19 +17,7 @@ from langchain.docstore.document import Document
 
 from langchain.chains.base import Chain
 
-'''
-这段代码使用了@lru_cache装饰器，将load_vector_store函数进行缓存处理。具体来说，它会将函数的结果缓存在内存中，以避免重复计算。
 
-缓存的大小由常量CACHED_VS_NUM指定，表示保留的缓存个数。当调用load_vector_store函数时，会先检查是否已经有相应的缓存结果，如果有则直接返回缓存的结果，否则再执行函数的计算并缓存结果。
-
-这样做的好处是，在调用load_vector_store函数时，如果传入相同的参数，就可以直接返回之前计算好的结果，而不需要再次执行计算，从而提高函数的执行效率。
-
-整体来看，这段代码通过@lru_cache装饰器实现了一个简单的函数缓存机制，用于优化load_vector_store函数的性能。
-'''
-
-
-# will keep CACHED_VS_NUM of vector store caches
-@lru_cache(CACHED_VS_NUM)
 def load_vector_store(vs_path, embeddings):
     return MyFAISS.load_local(vs_path, embeddings)
 
@@ -45,8 +33,8 @@ def load_file(filepath, sentence_size=SENTENCE_SIZE, using_zh_title_enhance=ZH_T
         docs = loader.load_and_split(textsplitter)
     elif filepath.lower().endswith(".pdf"):
         # 暂且将paddle相关的loader改为动态加载，可以在不上传pdf/image知识文件的前提下使用protobuf=4.x
-        from loader import UnstructuredPaddlePDFLoader
-        loader = UnstructuredPaddlePDFLoader(filepath)
+        from loader import UnstructuredRapidPDFLoader
+        loader = UnstructuredRapidPDFLoader(filepath)
         textsplitter = ChineseTextSplitter(pdf=True, sentence_size=sentence_size)
         docs = loader.load_and_split(textsplitter)
     elif filepath.lower().endswith(".jpg") or filepath.lower().endswith(".png"):
@@ -135,16 +123,16 @@ class LocalDocQA:
                  embedding_model: str = EMBEDDING_MODEL,
                  embedding_device=EMBEDDING_DEVICE,
                  llm_device=LLM_DEVICE,
-                 llm_model: Chain = None,
-                 llm_model_name: str = LLM_MODEL,
+                 llm_history_len: int = LLM_HISTORY_LEN,
+                 llm_model: str = LLM_MODEL,
                  use_ptuning_v2: bool = USE_PTUNING_V2,
                  top_k=VECTOR_SEARCH_TOP_K,
                  ):
         self.llm = ChatGLM()
-        self.llm.load_model(model_name_or_path=llm_model_dict[llm_model_name],
+        self.llm.load_model(model_name_or_path=llm_model_dict[llm_model]['pretrained_model_name'],
                             llm_device=llm_device,
                             use_ptuning_v2=use_ptuning_v2)
-        self.llm_model_chain = llm_model
+        self.llm.history_len = llm_history_len
         self.embeddings = HuggingFaceEmbeddings(model_name=embedding_model_dict[embedding_model],
                                                 model_kwargs={'device': embedding_device})
         self.top_k = top_k
@@ -228,17 +216,24 @@ class LocalDocQA:
         else:
             prompt = query
 
-        answer_result_stream_result = self.llm_model_chain(
-            {"prompt": prompt, "history": chat_history, "streaming": streaming})
-
-        for answer_result in answer_result_stream_result['answer_result_stream']:
-            resp = answer_result.llm_output["answer"]
-            history = answer_result.history
+        # if streaming:
+        #     for result, history in self.llm._stream_call(prompt=prompt,
+        #                                                  history=chat_history):
+        #         history[-1][0] = query
+        #         response = {"query": query,
+        #                     "result": result,
+        #                     "source_documents": related_docs_with_score}
+        #         yield response, history
+        # else:
+        for result, history in self.llm._call(prompt=prompt,
+                                              history=chat_history,
+                                              streaming=streaming):
             history[-1][0] = query
             response = {"query": query,
-                        "result": resp,
+                        "result": result,
                         "source_documents": related_docs_with_score}
             yield response, history
+
 
     def get_search_result_based_answer(self, query, chat_history=[], streaming: bool = STREAMING):
         results = bing_search(query)

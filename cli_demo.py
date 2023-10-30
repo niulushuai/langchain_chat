@@ -5,12 +5,6 @@ import nltk
 
 nltk.data.path = [os.path.join(os.path.dirname(__file__), "nltk_data")] + nltk.data.path
 
-# return top-k text chunk from vector store
-VECTOR_SEARCH_TOP_K = 6
-
-# LLM input history length
-LLM_HISTORY_LEN = 3
-
 # Show reply with source text from input document
 REPLY_WITH_SOURCE = True
 
